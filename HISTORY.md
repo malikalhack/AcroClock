@@ -76,3 +76,21 @@ Records key decisions, structural changes, and completed phases.
 - **Whole-device 18650 backup** — deferred; needs charging, protection, and
   mains/battery source switching. The DS3231 already retains time on its own
   cell during mains loss.
+
+---
+
+## 2026-08-15
+
+### CMSIS solution added
+- Added a CMSIS-based project solution to the repository to support
+  standardized build and target configuration for STM32F103 (CMSIS device
+  and toolchain integration).
+
+## 2026-08-16
+
+### AcroSched library update
+- Added the AcroSched library version 2.2.0 to the workspace and updated
+  integration notes to reference the newer scheduler release (replacing the
+  prior 1.7 reference).
+
+---

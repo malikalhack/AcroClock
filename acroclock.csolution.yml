@@ -38,7 +38,11 @@ solution:
       target-set:
         - set:
           images:
-            - project-context: navigation.Debug
+            - project-context: acroclock.Debug
+          debugger:
+            name: ST-Link@pyOCD
+            clock: 4000000
+            protocol: swd
 
   # List of different build configurations.
   build-types:
@@ -56,11 +60,9 @@ solution:
         - for-compiler: GCC
           C-CPP:
             - -Os
-
     # List related projects.
   projects:
     - project: project/acroclock.cproject.yml
   # Default compiler used when --toolchain is not specified.
   # NOTE: passing --toolchain GCC will print "redefinition" warnings � this is harmless.
   compiler: AC6@6.20.1
-

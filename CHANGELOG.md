@@ -18,7 +18,7 @@ AcroClock uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Decided
 - Project name: **AcroClock** (working title).
-- Target MCU: STM32F103C8T6 on the existing AcroSched 1.7 (F103) port.
+- Target MCU: STM32F103C8T6 on the existing AcroSched 2.2.0 (F103) port.
 - Display: four single-digit common-cathode green seven-segment indicators
   (E11801-J-UG4-8-W), driven via a 74HC595 SPI chain + high-side source driver;
   colon from two discrete LEDs, blinking at 1 Hz; leading-zero blanking on the

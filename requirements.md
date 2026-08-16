@@ -5,7 +5,7 @@
 **Date:** 2026-06-28
 **Version:** 0.1.0 *(draft — inception)*
 
-A digital desk clock built on the **AcroSched 1.7** cooperative scheduler.
+A digital desk clock built on the **AcroSched 2.2.0** cooperative scheduler.
 Real-time accuracy from a DS3231 TCXO RTC, four large green seven-segment
 displays driven statically, ambient-light brightness control, four
 software alarms, and an audible buzzer.
@@ -162,7 +162,7 @@ The clock shall be able to show ambient temperature on demand.
 
 ### REQ-010 — Scheduler Core ✅
 
-The firmware shall be built on **AcroSched 1.7** (cooperative dispatcher,
+The firmware shall be built on **AcroSched 2.2.0** (cooperative dispatcher,
 static memory, no RTOS).
 
 **Acceptance criteria:**
