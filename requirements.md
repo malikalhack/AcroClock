@@ -5,10 +5,10 @@
 **Date:** 2026-06-28
 **Version:** 0.1.0 *(draft — inception)*
 
-A digital desk clock built on the **AcroSched 2.2.0** cooperative scheduler.
-Real-time accuracy from a DS3231 TCXO RTC, four large green seven-segment
-displays driven statically, ambient-light brightness control, four
-software alarms, and an audible buzzer.
+A digital desk clock built on the **AcroSched 2.7.0** cooperative scheduler.
+Real-time accuracy from a DS3231 TCXO RTC, a four-digit multiplexed
+seven-segment display, ambient-light brightness control, four software alarms,
+and an audible buzzer.
 
 > **Status legend:** ✅ decided · 🟡 open / TBD · ⏸ deferred to a later phase.
 
@@ -31,42 +31,40 @@ The clock shall keep time using a **DS3231SN** TCXO real-time clock over I2C.
 
 ### REQ-002 — Display ✅
 
-The clock shall display the current time on **four single-digit, common-cathode,
-green seven-segment indicators** (E11801-J-UG4-8-W, 45.72 mm character height),
-driven **statically** (no multiplexing).
+The initial build shall display the current time on an **E40281-I-O-0-W**
+four-digit, red, common-anode seven-segment display, driven dynamically
+(multiplexed). Its character height is 7.1 mm, and the module includes a
+two-LED colon.
 
 **Acceptance criteria:**
 - Normal mode shows `HH:MM` only.
-- A **colon** between hours and minutes is implemented with **two discrete
-  green LEDs** (the indicators provide a decimal point, not a colon).
-- The colon **blinks at 1 Hz** (≈0.5 s on / 0.5 s off) to convey passing
-  seconds; blinking pauses while editing time.
+- The integrated colon between hours and minutes blinks at 1 Hz (≈0.5 s on /
+  0.5 s off) to convey passing seconds; blinking pauses while editing time.
 - The hours **tens digit is blanked when zero** (e.g. ` 9:05`, not `09:05`).
+- The display is multiplexed by firmware; the four digits are refreshed in
+  turn.
+- The selected display is the initial implementation target. Scaling to other
+  display sizes and the associated power design are deferred.
 
 ---
 
 ### REQ-003 — Display Driver 🟡
 
-The segment driver shall be a **self-made** design (no integrated scan driver
-such as MAX7219 / HT16K33), built from discrete logic to keep cost down.
+The display driver interface shall support the E40281-I-O-0-W common-anode
+display and firmware-controlled multiplexing.
 
 **Acceptance criteria:**
-- Static drive of ~32 segment lines is achieved through a chain of **74HC595**
-  shift registers fed over **SPI** (clock, data, latch), keeping the MCU pin
-  count low.
-- Per-segment current is supplied by a **high-side source driver**
-  (common-cathode geometry; e.g. TBD62783 / UDN2981 class) plus a
-  current-limiting resistor per segment.
-- **Segment supply voltage — measured:** segment current limits to 20 mA at
-  **~6 V** (three dies in series), so 5 V is **insufficient** and 12 V is
-  unnecessary; a **~6.5–7 V** rail covers Vf + source-driver + resistor drop.
-  Full static draw ≈ **0.76 A** (0.64 A display + 2×20 mA colon + 4×20 mA alarm
-  LEDs), reduced by `/OE` PWM dimming.
-- 🟡 **Static vs. dynamic (multiplexed) drive** is being reconsidered to cut
-  total current and part count; the chosen scheme drives the whole driver
-  design. *(Owner deciding.)*
-- 🟡 The 4 alarm LEDs and the colon LEDs **may** be folded into the same
-  shift-register chain to save GPIO — decided during schematic design.
+- The firmware interface provides segment signals and digit-select signals
+  appropriate for a common-anode display.
+- At 20 mA per LED chip, the datasheet specifies forward voltage of 2.0 V
+  typical and 2.6 V maximum.
+- Do not exceed the absolute maximum of 30 mA DC forward current per LED chip.
+  The 90 mA peak rating applies only at 1/10 duty and 0.1 ms pulse width; it
+  shall not be treated as a general multiplexing current limit.
+- The driver design shall use the module's integrated colon and follow the
+  datasheet's internal circuit diagram and pinout.
+- Specific driver components, supply rails, current budget, brightness control,
+  and scaling are deferred; they are not fixed by this initial requirement.
 
 ---
 
@@ -76,8 +74,8 @@ Display brightness shall adapt automatically to ambient light.
 
 **Acceptance criteria:**
 - Ambient light is measured with a **BH1750FVI** sensor over I2C (shared bus).
-- Brightness is set by **PWM on the shift-register `/OE`** line (global dimming),
-  not by changing segment currents.
+- Display brightness is globally adjustable; the control mechanism depends on
+  the display-driver design and is deferred with that design.
 - The brightness mapping uses **averaging and hysteresis** so the display does
   not flicker or hunt under changing/shadowed light.
 - A sensible **minimum brightness** keeps the clock readable in darkness.
@@ -162,7 +160,7 @@ The clock shall be able to show ambient temperature on demand.
 
 ### REQ-010 — Scheduler Core ✅
 
-The firmware shall be built on **AcroSched 2.2.0** (cooperative dispatcher,
+The firmware shall be built on **AcroSched 2.7.0** (cooperative dispatcher,
 static memory, no RTOS).
 
 **Acceptance criteria:**
@@ -172,7 +170,15 @@ static memory, no RTOS).
   **software-timer module** (`ACROSCHED_USE_TIMERS`).
 - ISR-to-task signalling (e.g. button / encoder events) uses AcroSched
   **event flags / mailbox** (`ACROSCHED_USE_IPC`).
-- No display multiplexing in software (static drive — see REQ-002/003).
+- The STM32 independent watchdog is enabled and refreshed by the AcroSched
+  watchdog hook (`ACROSCHED_USE_WATCHDOG`); `acroWatchdogRefresh()` kicks
+  `bspWatchdogKick()`.
+- The normal idle hook is enabled (`ACROSCHED_USE_IDLE_HOOK`) to run Cortex-M
+  `WFI` when no task ran. It is shallow CPU sleep only; it does not select
+  tickless, STOP, or STANDBY modes.
+- Deep/tickless sleep is not enabled (`ACROSCHED_USE_TICKLESS = 0`);
+  the 1 kHz hardware-timer tick remains the AcroSched time source.
+- Display multiplexing is performed by firmware as required by REQ-002/003.
 
 ---
 
@@ -182,21 +188,22 @@ The firmware shall target the **STM32F103C8T6** (Cortex-M3, 72 MHz, LQFP48,
 64 KB flash, 20 KB RAM).
 
 **Acceptance criteria:**
-- All peripherals fit the device: SPI (display), I2C (RTC + light + EEPROM),
-  one timer in encoder mode, a PWM channel for `/OE` brightness, and GPIO for
-  buttons, alarm LEDs, buzzer, and DS3231 INT/SQW.
+- All peripherals fit the device: I2C (RTC + light + EEPROM), one timer in
+  encoder mode, resources for display multiplexing and driver-dependent
+  brightness control, and GPIO for buttons, alarm LEDs, buzzer, and DS3231
+  INT/SQW.
 - The existing AcroSched Cortex-M (F103) port is used unchanged.
 
 ---
 
 ### REQ-012 — Power ⏸
 
-The clock is powered from a **5 V** board input.
+The overall power architecture is deferred until after the initial display
+implementation.
 
 **Acceptance criteria:**
-- Nominal operation from the 5 V rail (logic).
-- The display segments need a **~6.5–7 V** rail (segment Vf ≈ 6 V @20 mA,
-  measured); board input voltage is decided with the display-drive scheme.
+- The supply rails, input voltage, display current budget, and regulator/driver
+  design are not fixed by the initial display requirements.
 - The DS3231 keeps time on its own backup cell during mains loss.
 - ⏸ **Optional whole-device battery backup (18650)** — charging (e.g. TP4056),
   protection, and source switching (mains/battery) are **deferred to a later
@@ -224,18 +231,20 @@ The project shall follow the conventions established by AcroSched.
 
 ### Phase 0 — Foundation
 - **T-001** — Finalise component list (BOM) and confirm part availability.
-- **T-002** ✅ — Segment wiring & Vf measured on the bench: 20 mA limit at ~6 V
-  (3 dies in series) → segment rail ~6.5–7 V; full static draw ≈ 0.76 A.
-- **T-003** — Draft MCU pin map (SPI / I2C / encoder timer / PWM / GPIO).
+- **T-002** ⏸ — Determine power rails and display current budget after the
+  initial display implementation.
+- **T-003** — Draft MCU pin map (display multiplexing, I2C, encoder timer,
+  GPIO, and driver-dependent brightness control).
 - **T-004** — Confirm AcroSched F103 port + project skeleton.
 
 ### Phase 1 — Display subsystem
-- **T-010** — Design self-made static driver schematic (74HC595 chain +
-  high-side source driver + segment resistors).
-- **T-011** — Bring up a single digit (static), verify brightness & current.
-- **T-012** — Extend to 4 digits + colon LEDs over SPI.
+- **T-010** — Define the display-driver interface for the E40281-I-O-0-W
+  common-anode display and multiplexed operation.
+- **T-011** — Bring up one digit and verify segment mapping and digit selection.
+- **T-012** — Extend to all 4 digits and the colon LEDs.
 - **T-013** — Segment/font lookup table and frame-buffer update routine.
-- **T-014** — `/OE` PWM channel for global brightness.
+- **T-014** — Implement global brightness control using the selected
+  display-driver interface.
 
 ### Phase 2 — Timekeeping
 - **T-020** — DS3231 I2C driver (time read/write, BCD handling).
@@ -279,14 +288,15 @@ The project shall follow the conventions established by AcroSched.
 ## 3. Open Questions
 
 1. ✅ ~~Project name~~ — **AcroClock** confirmed (working title kept).
-2. ✅ ~~Segment supply voltage~~ — **measured:** Vf ≈ 6 V @20 mA → ~6.5–7 V
-   rail (5 V too low, 12 V not needed); full static draw ≈ 0.76 A.
+2. ⏸ **Display supply voltage and current budget** — determine during the
+   deferred power-design phase for the selected display and driver.
 3. ✅ ~~Leading-zero blanking~~ — **yes**, blank the hours tens zero.
 4. ✅ ~~Alarm repeat model~~ — **7-bit weekday mask** (default daily).
-5. 🟡 **Display drive: static vs. dynamic (multiplex)** — owner evaluating;
-   affects driver topology and average current.
+5. 🟡 **Display-driver components, supply, current budget, and scaling** —
+   deferred until after the initial display implementation.
 6. 🟡 **Snooze / auto-stop** timings for the buzzer.
-7. ⏸ **Whole-device 18650 backup** — deferred (depends on the drive scheme).
+7. ⏸ **Whole-device 18650 backup** — deferred until the power architecture is
+   defined.
 
 ---
 
