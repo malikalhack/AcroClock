@@ -6,7 +6,7 @@
 //------ With VS Code: Open Preview for Configuration Wizard -------------------
 
 // <n> Auto-generated using information from packs
-// <i> Device Family Pack (DFP):   Keil::STM32F1xx_DFP@2.4.1
+// <i> Device Family Pack (DFP):   Keil::STM32F1xx_DFP@2.4.0
 
 // <h> ROM Configuration
 // =======================
@@ -94,7 +94,14 @@
 //   <o0> Stack Size (in Bytes) <0x0-0xFFFFFFFF:8>
 //   <o1> Heap Size (in Bytes) <0x0-0xFFFFFFFF:8>
 #define __STACK_SIZE 0x00000200
-#define __HEAP_SIZE 0x00000C00
+#define __HEAP_SIZE 0x00000000
+// </h>
+
+// <h> NOINIT Data Configuration
+//   <o> NOINIT Size (in Bytes) <0x0-0xFFFFFFFF:8>
+//   <i> Defines size of the uninitialized (not zeroed at startup) RAM region.
+//   <i> Set to 0 to disable the NOINIT region.
+#define __NOINIT_SIZE 0x00000080
 // </h>
 
 

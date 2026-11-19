@@ -1,0 +1,18 @@
+# Kernel layer — shared by all Cortex-M targets.
+# Provides: ARM::CMSIS:CORE component, AcroSched kernel sources, and the
+# public include path.  Contains NO device-specific defines, BSP, or startup.
+layer:
+
+  components:
+    - component: ARM::CMSIS:CORE
+
+  add-path:
+    - ../lib/inc
+
+  groups:
+    - group: Kernel
+      files:
+        - file: ../lib/stm32f103-ac6/acrosched.lib
+          for-compiler: AC6
+        - file: ../lib/stm32f103-gcc/libacrosched.a
+          for-compiler: GCC

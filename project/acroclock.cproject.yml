@@ -1,8 +1,8 @@
 #
 project:
-  components:
-    - component: ARM::CMSIS:CORE
 
+  layers:
+    - layer: kernel.clayer.yml
   define:
     - __RTE__
 
