@@ -1,13 +1,15 @@
 /**
+ * @copyright 2021 Anthony Chernov
+ * Licensed under the MIT License; see LICENSE in the project root.
  * @file    acrosched_timers.h
- * @version 2.2.0
+ * @version 2.7.1
  * @authors Anton Chernov
  * @date    2026-06-24
  * @date    @showdate "%Y-%m-%d"
  */
 
-#ifndef ACROSCHED_TIMERS_H_
-#define ACROSCHED_TIMERS_H_
+#ifndef ACROSCHED_TIMERS_H
+#define ACROSCHED_TIMERS_H
 
 /******************************** Included files ******************************/
 #include <stdint.h>
@@ -58,8 +60,10 @@ typedef void AcroTimerCallback_t(AcroTimerId_t id, AcroParam_t param);
  * @details Stores the system tick source and clears the timer pool. Call once
  * after acroInit() and before creating any timer. The tick source is the same
  * volatile counter passed to acroInit().
+ * With tickless enabled, a different already-attached scheduler source is
+ * rejected with eAcroInvalidParam without changing the timer pool.
  * @param[in] pTimeSource - pointer to the volatile system tick counter
- *                          (must not be NULL).
+ * (must not be NULL).
  * @returns Operation status.
  * @retval eAcroOk           Module initialised successfully.
  * @retval eAcroInvalidParam pTimeSource is NULL.
@@ -74,11 +78,11 @@ EAcroStatus_t acroTimersInit(volatile AcroTick_t const *pTimeSource);
  * @param[in]  mode      - eAcroTimerOneShot or eAcroTimerPeriodic.
  * @param[in]  param     - user context handed to the callback (may be NULL).
  * @param[out] pId       - receives the handle of the new timer (must not be
- *                         NULL).
+ * NULL).
  * @returns Operation status.
  * @retval eAcroOk           Timer created; *pId holds the handle.
  * @retval eAcroInvalidParam A pointer is NULL, mode is out of range, or the
- *                           module is not initialised.
+ * module is not initialised.
  * @retval eAcroFull         The timer pool is full; no free slot available.
  */
 EAcroStatus_t acroTimerCreate(AcroTimerCallback_t *pCallback,
@@ -97,7 +101,7 @@ EAcroStatus_t acroTimerCreate(AcroTimerCallback_t *pCallback,
  * @returns Operation status.
  * @retval eAcroOk           Timer armed.
  * @retval eAcroInvalidParam id is out of range, the slot is not allocated, or
- *                           period is 0.
+ * period is 0.
  */
 EAcroStatus_t acroTimerStart(AcroTimerId_t id, AcroTick_t period);
 
@@ -136,8 +140,8 @@ void acroTimersService(void);
  */
 AcroTick_t acroTimersTimeToNext(void);
 
-#endif /* ACROSCHED_USE_TIMERS */
+#endif // ACROSCHED_USE_TIMERS
 
 /******************************************************************************/
 
-#endif //! ACROSCHED_TIMERS_H_
+#endif // !ACROSCHED_TIMERS_H

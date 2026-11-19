@@ -1,13 +1,15 @@
 /**
+ * @copyright 2021 Anthony Chernov
+ * Licensed under the MIT License; see LICENSE in the project root.
  * @file    acrosched_defs.h
- * @version 2.2.0
+ * @version 2.7.1
  * @authors Anton Chernov
  * @date    2026-05-14
  * @date    @showdate "%Y-%m-%d"
  */
 
-#ifndef ACROSCHED_DEFS_H_
-#define ACROSCHED_DEFS_H_
+#ifndef ACROSCHED_DEFS_H
+#define ACROSCHED_DEFS_H
 
 /******************************** Included files ******************************/
 #include <stdint.h>
@@ -92,4 +94,4 @@
 #define ACRO_MAX(a, b)          (((a) > (b)) ? (a) : (b))
 
 /******************************************************************************/
-#endif //! ACROSCHED_DEFS_H_
+#endif // !ACROSCHED_DEFS_H

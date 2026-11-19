@@ -1,19 +1,19 @@
 /**
+ * @copyright 2021 Anthony Chernov
+ * Licensed under the MIT License; see LICENSE in the project root.
  * @file    acrosched.h
- * @version 2.2.0
+ * @version 2.7.1
  * @authors Anton Chernov
  * @date    2026-05-14
  * @date    @showdate "%Y-%m-%d"
  */
 
-#ifndef ACROSCHED_H_
-#define ACROSCHED_H_
-
+#ifndef ACROSCHED_H
+#define ACROSCHED_H
 /******************************** Included files ******************************/
 #include <stddef.h>
 #include <stdint.h>
 #include "acrosched_config.h"
-
 /********************************* Definitions ********************************/
 
 /**
@@ -58,7 +58,7 @@ typedef enum EAcroMode {
 /*----------------------------------------------------------------------------*/
 
 /** @brief Generic parameter pointer passed to task functions. */
-typedef void * AcroParam_t;
+typedef void *AcroParam_t;
 
 /** @brief Task function signature. */
 typedef void AcroTask_t(AcroParam_t);
@@ -88,6 +88,8 @@ typedef uint32_t AcroDispatchCount_t;
  * @returns Operation status.
  * @retval eAcroOk           Initialisation successful.
  * @retval eAcroInvalidParam pTimeSource is NULL.
+ * @note With tickless and software timers enabled, also rejects a different
+ * already-attached timer source without resetting the scheduler.
  */
 EAcroStatus_t acroInit(volatile AcroTick_t const *pTimeSource);
 
@@ -108,14 +110,23 @@ EAcroStatus_t acroRun(void);
 
 /**
  * @brief Adds a task to the scheduler pool.
- * @param[in] dscr     - user-defined task descriptor.
+ * @details Descriptors must be unique among registered tasks. A duplicate
+ * returns eAcroInvalidParam without changing the pool, even when it is full.
+ * After removal the descriptor may be registered again. In a preemptive build
+ * with a non-empty ACROSCHED_TASK_STACK_SIZES map, an unlisted descriptor also
+ * returns eAcroInvalidParam before registration.
+ * With preemptive stack diagnostics enabled, returns eAcroError without
+ * registering if the assigned ID or stack still belongs to the executing
+ * task after its removal. Retry after a context switch.
+ * @param[in] dscr     - non-zero user-defined task descriptor; zero returns
+ * eAcroInvalidParam without changing the pool or assigning an ID.
  * @param[in] pFunc    - pointer to the task function (must not be NULL).
  * @param[in] pParams  - argument passed to the task function (may be NULL).
  * @param[in] mode     - initial execution mode (@ref EAcroMode_t).
  * @param[in] runTime  - period or timeout in system ticks.
  * @param[in] priority - dispatch priority; higher value means earlier
- *                       dispatch. Equal-priority tasks are dispatched in
- *                       registration order. Use 0 for round-robin behaviour.
+ * dispatch. Equal-priority tasks are dispatched in
+ * registration order. Use 0 for round-robin behaviour.
  * @returns Operation status.
  * @acrostdreturns
  */
@@ -130,14 +141,23 @@ EAcroStatus_t acroAddTask(
 
 /**
  * @brief Adds a task to the pool with an initial start delay.
- * @param[in] dscr     - user-defined task descriptor.
+ * @details Descriptors must be unique among registered tasks. A duplicate
+ * returns eAcroInvalidParam without changing the pool, even when it is full.
+ * After removal the descriptor may be registered again. In a preemptive build
+ * with a non-empty ACROSCHED_TASK_STACK_SIZES map, an unlisted descriptor also
+ * returns eAcroInvalidParam before registration.
+ * With preemptive stack diagnostics enabled, returns eAcroError without
+ * registering if the assigned ID or stack still belongs to the executing
+ * task after its removal. Retry after a context switch.
+ * @param[in] dscr     - non-zero user-defined task descriptor; zero returns
+ * eAcroInvalidParam without changing the pool or assigning an ID.
  * @param[in] pFunc    - pointer to the task function (must not be NULL).
  * @param[in] pParams  - argument passed to the task function (may be NULL).
  * @param[in] mode     - execution mode after the delay expires.
  * @param[in] runTime  - period or timeout in system ticks.
  * @param[in] delay    - initial standby duration in system ticks.
  * @param[in] priority - dispatch priority; higher value means earlier
- *                       dispatch. Use 0 for round-robin behaviour.
+ * dispatch. Use 0 for round-robin behaviour.
  * @returns Operation status.
  * @acrostdreturns
  */
@@ -258,6 +278,10 @@ void acroIdleHook(void);
  * external interrupt. The scan runs inside a critical section so the snapshot
  * is consistent. Combine with acroTimersTimeToNext() (software-timer module)
  * to obtain an overall sleep budget. Enable via ACROSCHED_USE_IDLE_HOOK = 1.
+ * With both preemption and tickless enabled, uses the registered tasks' TCB
+ * states instead: new/active tasks report 0 and timed blocked tasks contribute
+ * their deadlines. An indefinitely blocked task contributes no event.
+ * The maximum result is a sentinel, not permission for unbounded deep sleep.
  * @returns Ticks until the next scheduled task event; 0 if one is already due,
  * or the maximum AcroTick_t value if no task schedules a wake-up.
  */
@@ -267,24 +291,90 @@ AcroTick_t acroTimeToNextEvent(void);
 
 /*----------------------------------------------------------------------------*/
 
-#if (ACROSCHED_USE_HOOKS == 1)
+#if (ACROSCHED_USE_TICKLESS == 1)
+
+/**
+ * @brief Initialise the selected port's tickless time source and sleep limit.
+ * @details The mutable counter must be the same counter passed to acroInit()
+ * and, when used, acroTimersInit(). Call after acroInit(), before acroRun(),
+ * with interrupts enabled. The port validates the clock, timer ownership
+ * and sleep limit.
+ * Follow the selected port's peripheral-clock and watchdog setup restrictions.
+ * No weak default implementation is supplied.
+ * @param[in,out] pTick - application-owned counter, never a cast of const.
+ * @param[in] tickHz - normal scheduler tick frequency, greater than zero.
+ * @param[in] maxSleepTicks - finite bound below half the tick-counter range.
+ * Limits duration, not depth; the port selects a mode or skips sleep.
+ * Must fit watchdog and external peripheral constraints with wake-up margin.
+ * @returns eAcroOk on success; an explicit error on invalid input or setup.
+ */
+EAcroStatus_t acroPortTicklessInit(
+    volatile AcroTick_t *pTick,
+    uint32_t tickHz,
+    AcroTick_t maxSleepTicks
+);
+
+/**
+ * @brief Implement the port's ACROSCHED_TICKLESS_IDLE(budget) transaction.
+ * @details Entered in task context with interrupts masked after a readiness
+ * recheck. Account for the partially elapsed tick, pending IRQs and actual
+ * sleep time; restore clocks, tick phase and the entry IRQ mask before return.
+ * Keep the ordinary tick clock during normal application execution. Document
+ * any MCU-specific clock changes within preparation/restoration. Use the
+ * low-power counter for sleep and transition accounting; retain fractional carry.
+ * The budget is in ticks from the current counter value, not whole additional
+ * ticks after entry. Bound it by the configured limit and hardware capacity.
+ * A short budget permits ordinary idle; a setup/restoration failure must be
+ * diagnosed and must not return as successful sleep. No weak default exists.
+ * @param[in] budget - positive, finite next-event budget.
+ */
+void acroPortTicklessIdle(AcroTick_t budget);
+
+/**
+ * @brief Implement the port's ACROSCHED_TICKLESS_WAKE() entry hook.
+ * @details Idempotently finish pending wake accounting before an ISR uses
+ * scheduler time or APIs. Required where the ISR executes before the idle
+ * transaction returns, notably MSP430. The kernel calls this function directly
+ * before calculating its sleep budget, with interrupts masked. The
+ * ACROSCHED_TICKLESS_WAKE() macro is for ISR context only: a port may also
+ * clear sleep bits in the saved interrupt frame, which a task cannot do.
+ * Before successful port initialisation it must leave the ordinary tick
+ * path intact. No weak default exists.
+ */
+void acroPortTicklessWake(void);
+
+#endif /* ACROSCHED_USE_TICKLESS */
+
+/*----------------------------------------------------------------------------*/
+
+#if (ACROSCHED_USE_HOOKS == 1) || (ACROSCHED_USE_TICKLESS == 1)
 
 /**
  * @brief Diagnostic hook called when a pool operation is rejected with an error.
- * @details Weak no-op default. The pool layer calls this hook whenever a public
- * API operation fails for a reason other than pool overflow (for example an
- * invalid parameter). The hook runs after the critical section has been left,
- * so interrupts are in their normal state when it executes. Override this
- * function in the application layer to log or react to the failure. Pool
- * overflow is reported separately through acroPoolOverflowHook().
- * Enable via ACROSCHED_USE_HOOKS = 1 in acrosched_config.h.
+ * @details With ACROSCHED_USE_HOOKS = 1, the pool layer calls this hook whenever
+ * a public API operation fails for a reason other than pool overflow, after
+ * leaving its critical section. Pool overflow uses acroPoolOverflowHook().
+ * With tickless disabled, a weak no-op default is supplied.
+ * With ACROSCHED_USE_TICKLESS = 1, the application must supply this hook even
+ * when pool hooks are disabled; there is no weak default. An unrecoverable
+ * port error calls it with eAcroError and interrupts masked, then halts.
+ * Fault diagnostics must not wait for interrupts or rely on the failed clock.
+ * Keep the hook bounded and non-blocking; a RAM status record is sufficient
+ * for debugger inspection. Do not call scheduler APIs, unmask interrupts
+ * or attempt clock/timer recovery. The hook may return: the fatal path halts
+ * afterwards; init/API errors instead return to the caller. Port faults use
+ * eAcroError without an individual cause code, also used by pool operations.
  * @param[in] status - the non-success status returned by the operation.
  */
 void acroErrorHook(EAcroStatus_t status);
 
+#endif /* ACROSCHED_USE_HOOKS / ACROSCHED_USE_TICKLESS */
+/*----------------------------------------------------------------------------*/
+#if (ACROSCHED_USE_HOOKS == 1)
+
 /**
  * @brief Diagnostic hook called when a task cannot be added because the pool
- *        is full.
+ * is full.
  * @details Weak no-op default. The pool layer calls this hook whenever
  * acroAddTask() or acroAddTaskWithDelay() is rejected with eAcroFull. The hook
  * runs after the critical section has been left. Override this function in the
@@ -364,7 +454,7 @@ EAcroStatus_t acroGetTaskDispatchCount(uint8_t id, AcroDispatchCount_t *pCount);
  */
 AcroDispatchCount_t acroGetIterationCount(void);
 
-#endif /* ACROSCHED_USE_STATISTICS */
+#endif // ACROSCHED_USE_STATISTICS
 
 /******************************************************************************/
-#endif //! ACROSCHED_H_
+#endif // !ACROSCHED_H
