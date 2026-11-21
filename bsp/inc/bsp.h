@@ -31,14 +31,30 @@ enum EResetCause {
     eUnknown  = 5  /**< Cause could not be determined.           */
 };
 
+/**
+ * @enum EBspStatus
+ * @brief Result of a board-support operation.
+ */
+typedef enum EBspStatus {
+    eBspOk             = 0, /**< Operation completed successfully.     */
+    eBspInvalidParam   = 1, /**< An argument is invalid.               */
+    eBspNotInitialized = 2, /**< The peripheral is not initialized.    */
+    eBspTimeout        = 3, /**< The operation timed out.              */
+    eBspNack           = 4, /**< The I2C target did not acknowledge.   */
+    eBspBusError       = 5  /**< The I2C peripheral reported an error. */
+} EBspStatus_t;
+
 /********************* Application Programming Interface *********************/
 
 /**
- * @brief Configures SysTick for 1 kHz ticks and enables global interrupts.
+ * @brief Initializes board peripherals and enables global interrupts.
  * @details Call from main() after startup has run SystemInit() (clocks, GPIO
- *          and UART are already configured by then).
+ * and UART are already configured by then). Initializes I2C1 in standard mode
+ * at 100 kHz before enabling interrupts.
+ * @param[in] tick_source - application-owned 1 kHz counter used by SysTick.
+ * @returns Initialization status.
  */
-void bspInit(void);
+EBspStatus_t bspInit(volatile uint32_t *tick_source);
 
 /**
  * @brief Get the system core clock frequency.
@@ -58,13 +74,39 @@ unsigned short reset_cause(void);
 /**
  * @brief Arms the independent watchdog (IWDG) with a fixed timeout.
  * @details Once started the watchdog cannot be stopped except by a reset; the
- *          application must call bspWatchdogKick() more often than the timeout
- *          or the MCU is reset. Drives a nominal ~2 s timeout from the LSI.
+ * application must call bspWatchdogKick() more often than the timeout or
+ * the MCU is reset. Drives a nominal ~2 s timeout from the LSI.
  */
 void bspWatchdogStart(void);
 
 /** @brief Reloads (kicks) the independent watchdog to postpone its reset. */
 void bspWatchdogKick(void);
+
+/**
+ * @brief Initializes the I2C1 peripheral for synchronous master transfers.
+ * @details Uses PB6/PB7, standard-mode 100 kHz and assumes external pull-ups.
+ * @returns Initialization status.
+ */
+EBspStatus_t bspI2cInit(void);
+
+/**
+ * @brief Writes bytes and optionally reads bytes from a 7-bit I2C address.
+ * @details When both lengths are non-zero, the read follows the write using a
+ * repeated START. This blocking API is for task/main context, not an ISR.
+ * @param[in] address7 - unshifted 7-bit I2C target address.
+ * @param[in] tx_data - bytes to transmit, or NULL when tx_len is zero.
+ * @param[in] tx_len - number of bytes to transmit.
+ * @param[out] rx_data - receive buffer, or NULL when rx_len is zero.
+ * @param[in] rx_len - number of bytes to receive.
+ * @returns Transfer status.
+ */
+EBspStatus_t bspI2cWriteRead(
+    uint8_t address7,
+    uint8_t const *tx_data,
+    uint8_t tx_len,
+    uint8_t *rx_data,
+    uint8_t rx_len
+);
 
 /**
  * @brief Transmits a single character over the debug UART (blocking).

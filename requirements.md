@@ -22,6 +22,10 @@ The clock shall keep time using a **DS3231SN** TCXO real-time clock over I2C.
 
 **Acceptance criteria:**
 - Time is read from the DS3231 over I2C; the MCU does not free-run the clock.
+- The DS3231 application driver accesses the device only through the BSP I2C
+  API; MCU registers and I2C transaction sequencing remain in the BSP.
+- During initial bring-up, the firmware reads the calendar registers once per
+  second and reports the decoded time and read failures through the debug log.
 - The RTC retains time across mains loss via its own backup cell (CR2032).
 - Display format is **24-hour** (`00`–`23` hours). No 12h / AM-PM mode.
 - The DS3231 1 Hz / SQW output is available to the MCU (drives the colon blink
@@ -188,6 +192,8 @@ The firmware shall target the **STM32F103C8T6** (Cortex-M3, 72 MHz, LQFP48,
 64 KB flash, 20 KB RAM).
 
 **Acceptance criteria:**
+- USART1 provides the debug UART on PA9/PA10; I2C1 connects the RTC on PB6/PB7
+  with external bus pull-ups.
 - All peripherals fit the device: I2C (RTC + light + EEPROM), one timer in
   encoder mode, resources for display multiplexing and driver-dependent
   brightness control, and GPIO for buttons, alarm LEDs, buzzer, and DS3231
@@ -227,15 +233,32 @@ The project shall follow the conventions established by AcroSched.
 
 ---
 
+### REQ-014 — Debug Log ✅
+
+The firmware shall provide a UART debug log for bring-up and diagnostics.
+
+**Acceptance criteria:**
+- The initial console uses USART1 at 115200 baud, 8 data bits, no parity, and
+  one stop bit.
+- Application log messages use a platform-independent logging interface;
+  USART registers and UART transmission remain in the BSP.
+- Startup, decoded DS3231 time, and RTC communication failures are reported.
+
+---
+
 ## 2. Task Backlog
 
 ### Phase 0 — Foundation
 - **T-001** — Finalise component list (BOM) and confirm part availability.
 - **T-002** ⏸ — Determine power rails and display current budget after the
   initial display implementation.
-- **T-003** — Draft MCU pin map (display multiplexing, I2C, encoder timer,
-  GPIO, and driver-dependent brightness control).
+- **T-003** — Configure the BSP UART and add the application debug-log
+  interface.
 - **T-004** — Confirm AcroSched F103 port + project skeleton.
+- **T-005** — Implement the BSP I2C1 master interface.
+- **T-006** — Add the DS3231 application driver and log the time once per
+  second through the BSP-backed debug log.
+- **T-007** — Draft the remaining MCU pin map after the initial RTC bring-up.
 
 ### Phase 1 — Display subsystem
 - **T-010** — Define the display-driver interface for the E40281-I-O-0-W
@@ -247,7 +270,7 @@ The project shall follow the conventions established by AcroSched.
   display-driver interface.
 
 ### Phase 2 — Timekeeping
-- **T-020** — DS3231 I2C driver (time read/write, BCD handling).
+- **T-020** — Integrate DS3231 readings into the timekeeping and display flow.
 - **T-021** — Periodic time read → frame buffer; 1 Hz colon blink.
 - **T-022** — Time-set UI integration (hours/minutes, optional seconds reset).
 

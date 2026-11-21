@@ -7,6 +7,7 @@
  */
 
 /******************************** Included files ******************************/
+#include <stddef.h>
 #include "RTE_Components.h"
 #include CMSIS_device_header
 #include "bsp.h"
@@ -50,6 +51,7 @@
 /****************************** Module variables ******************************/
 
 static uint32_t system_clock_hz __attribute__((section(".bss.noinit")));
+static volatile uint32_t *system_tick_source;
 
 /***************************** Private prototypes *****************************/
 
@@ -81,7 +83,6 @@ static void uart_config(void);
 
 /********************* Application Programming Interface **********************/
 
-/** @fn SystemInit */
 void SystemInit(void) {
 #ifdef DEBUG
     /* Keep debug connection alive during low-power modes and halt */
@@ -117,14 +118,24 @@ void SystemInit(void) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn get_system_core_clock */
 uint32_t get_system_core_clock(void) {
     return system_clock_hz;
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn bspInit */
-void bspInit(void) {
+EBspStatus_t bspInit(volatile uint32_t *tick_source) {
+    EBspStatus_t ret_val;
+
+    if (tick_source == NULL) {
+        return eBspInvalidParam;
+    }
+
+    ret_val = bspI2cInit();
+    if (ret_val != eBspOk) {
+        return ret_val;
+    }
+
+    system_tick_source = tick_source;
     systick_config(system_clock_hz / BSP_TICKS_PER_SEC);
 
     /* Enable the configurable fault exceptions (MemManage, BusFault,
@@ -135,22 +146,20 @@ void bspInit(void) {
                    SCB_SHCSR_USGFAULTENA_Msk);
 
     __enable_irq();
+    return eBspOk;
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn SysTick_Handler */
 void SysTick_Handler(void) {
-
+    (*system_tick_source)++;
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn reset_mcu */
 void reset_mcu(void) {
     NVIC_SystemReset();
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn reset_cause */
 unsigned short reset_cause(void) {
     unsigned int csr = RCC->CSR;
 
@@ -167,7 +176,6 @@ unsigned short reset_cause(void) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn bspWatchdogStart */
 void bspWatchdogStart(void) {
     IWDG->KR  = 0x0000CCCCU;    /* Enable IWDG (also forces the LSI on)     */
     IWDG->KR  = 0x00005555U;    /* Enable write access to PR and RLR        */
@@ -178,14 +186,12 @@ void bspWatchdogStart(void) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn bspWatchdogKick */
 void bspWatchdogKick(void) {
     IWDG->KR = 0x0000AAAAU;     /* Reload to postpone the watchdog reset    */
 }
 
 /****************************** Private functions *****************************/
 
-/** @fn flash_config */
 static void flash_config(void) {
     /* 2 wait states required for 48 MHz < SYSCLK ≤ 72 MHz */
     FLASH->ACR = (FLASH->ACR & ~FLASH_ACR_LATENCY) | FLASH_ACR_LATENCY_2;
@@ -194,7 +200,6 @@ static void flash_config(void) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn rcc_config */
 static void rcc_config(void) {
     /* Enable HSE (external 8 MHz crystal) and wait for it to stabilise */
     RCC->CR |= RCC_CR_HSEON;
@@ -228,7 +233,6 @@ static void rcc_config(void) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn gpio_config */
 static void gpio_config(void) {
 #ifdef UART_ENABLED
     /*
@@ -244,7 +248,6 @@ static void gpio_config(void) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn systick_config */
 static void systick_config(unsigned int ticks) {
     if ((ticks - 1U) > 0xFFFFFFU) {
         return;
@@ -261,7 +264,6 @@ static void systick_config(unsigned int ticks) {
 #ifdef UART_ENABLED
 /*----------------------------------------------------------------------------*/
 
-/** @fn uart_config */
 static void uart_config(void) {
     /*
      * BRR = 625 for 115200 baud at PCLK2 = 72 MHz
@@ -274,7 +276,6 @@ static void uart_config(void) {
 
 /********************* Application Programming Interface *********************/
 
-/** @fn uartSendChar */
 void uartSendChar(char c) {
 #ifdef UART_ENABLED
     while ((USART1->SR & USART_SR_TXE) == 0U) { }
@@ -285,7 +286,6 @@ void uartSendChar(char c) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn uartRecvChar */
 uint8_t uartRecvChar(char *c) {
 #ifdef UART_ENABLED
     if ((USART1->SR & USART_SR_RXNE) != 0U) {
@@ -299,7 +299,6 @@ uint8_t uartRecvChar(char *c) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn uartSendStr */
 void uartSendStr(const char *str) {
     while (*str != '\0') {
         uartSendChar(*str);
@@ -308,7 +307,6 @@ void uartSendStr(const char *str) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn uartSendUint8 */
 void uartSendUint8(uint8_t n) {
     if (n >= 10U) {
         uartSendChar((char)('0' + (n / 10U)));
@@ -317,7 +315,6 @@ void uartSendUint8(uint8_t n) {
 }
 /*----------------------------------------------------------------------------*/
 
-/** @fn uartSendUint16 */
 void uartSendUint16(uint16_t n) {
     uint16_t div_val;
     uint8_t  digit;

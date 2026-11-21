@@ -11,6 +11,7 @@ project:
     endian: little
 
   add-path:
+    - ../inc
     - ../bsp/inc
     - RTE/Device/STM32F103C8
 
@@ -32,11 +33,14 @@ project:
     - group: App
       files:
         - file: ../src/main.c
+        - file: ../src/debug_log.c
+        - file: ../src/rtc_ds3231.c
     - group: BSP
       add-path:
         - bsp/inc
       files:
         - file: ../bsp/src/bsp.c
+        - file: ../bsp/src/i2c.c
         - file: ../bsp/src/handlers.c
         - file: ../bsp/src/startup_stm32f103xb_ac6.S
           for-compiler: AC6
