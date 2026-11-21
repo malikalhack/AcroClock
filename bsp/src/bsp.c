@@ -189,6 +189,11 @@ void bspWatchdogStart(void) {
 void bspWatchdogKick(void) {
     IWDG->KR = 0x0000AAAAU;     /* Reload to postpone the watchdog reset    */
 }
+/*----------------------------------------------------------------------------*/
+
+void bspLedToggle(void) {
+    GPIOC->ODR ^= (1UL << 13U);
+}
 
 /****************************** Private functions *****************************/
 
@@ -227,6 +232,7 @@ static void rcc_config(void) {
 
     /* Enable peripheral clocks */
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN    /* GPIOA — USART1 pins */
+                  | RCC_APB2ENR_IOPCEN    /* GPIOC — on-board LED */
                   | RCC_APB2ENR_USART1EN; /* USART1              */
 
     system_clock_hz = SYSTEM_CLOCK_HZ;
@@ -245,6 +251,11 @@ static void gpio_config(void) {
                | (0xBUL << 4U)    /* PA9  TX: AF-PP 50 MHz */
                | (0x4UL << 8U);   /* PA10 RX: float input  */
 #endif /* UART_ENABLED */
+
+    /* PC13: set high before enabling output to keep the active-low LED off. */
+    GPIOC->BSRR = (1UL << 13U);
+    GPIOC->CRH = (GPIOC->CRH & ~(0xFUL << 20U))
+               | (0x2UL << 20U);
 }
 /*----------------------------------------------------------------------------*/
 

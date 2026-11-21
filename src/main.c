@@ -30,7 +30,8 @@
  * @brief Task descriptors.
  */
 enum ETaskDescriptors {
-    eLogTask = 1,
+    eLedBlinkTask = 1,
+    eLogTask,
     eMaxDscr
 };
 
@@ -55,6 +56,12 @@ static volatile AcroTick_t system_tick = 0U;
 _Noreturn static void error_handler(char const *message);
 
 /**
+ * @brief Toggles the on-board LED from the scheduled blink task.
+ * @param[in] params - unused scheduler task parameter.
+ */
+static void led_blink_task(AcroParam_t params);
+
+/**
  * @brief Reads the RTC and logs the current time or a read error.
  * @param[in] params - unused scheduler task parameter.
  */
@@ -73,6 +80,12 @@ static void log_rtc_error(ERtcStatus_t status);
 static void log_rtc_time(SRtcDateTime_t const *date_time);
 
 /****************************** Private functions *****************************/
+
+static void led_blink_task(AcroParam_t params) {
+    (void)params;
+    bspLedToggle();
+}
+/*----------------------------------------------------------------------------*/
 
 _Noreturn static void error_handler(char const *message) {
     debug_log_error(message);
@@ -153,6 +166,18 @@ int main(void) {
     debug_log_info("AcroClock starting");
 
     CHECK_STATUS(acroInit(&system_tick));
+    scheduler_status = acroAddTask(
+        eLedBlinkTask,
+        led_blink_task,
+        NULL,
+        ePeriodic,
+        BSP_TICKS_PER_SEC / 2U,
+        ePrioNormal
+    );
+    if (scheduler_status != eAcroOk) {
+        error_handler("LED blink task registration failed");
+    }
+
     scheduler_status = acroAddTask(
         eLogTask,
         rtc_log_task,

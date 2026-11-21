@@ -83,6 +83,12 @@ void bspWatchdogStart(void);
 void bspWatchdogKick(void);
 
 /**
+ * @brief Toggles the on-board LED connected to PC13.
+ * @details The LED is active-low on the STM32F103C8 Blue Pill board.
+ */
+void bspLedToggle(void);
+
+/**
  * @brief Initializes the I2C1 peripheral for synchronous master transfers.
  * @details Uses PB6/PB7, standard-mode 100 kHz and assumes external pull-ups.
  * @returns Initialization status.

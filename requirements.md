@@ -28,8 +28,13 @@ The clock shall keep time using a **DS3231SN** TCXO real-time clock over I2C.
   second and reports the decoded time and read failures through the debug log.
 - The RTC retains time across mains loss via its own backup cell (CR2032).
 - Display format is **24-hour** (`00`–`23` hours). No 12h / AM-PM mode.
-- The DS3231 1 Hz / SQW output is available to the MCU (drives the colon blink
-  and/or a 1-second tick), 🟡 exact use confirmed in Phase 2.
+- The DS3231 `32K` output is not used.
+- The DS3231 `INT/SQW` output is configured for a **1 Hz signal** and supplied
+  to the MCU as an external interrupt. It is the hardware seconds event and
+  is signalled to the AcroSched task via IPC; the MCU clock is not used as the
+  authority for calendar values.
+- The exact STM32 GPIO assignment for `INT/SQW` is TBD until the remaining
+  pin map is finalized.
 
 ---
 
@@ -194,6 +199,22 @@ The firmware shall target the **STM32F103C8T6** (Cortex-M3, 72 MHz, LQFP48,
 **Acceptance criteria:**
 - USART1 provides the debug UART on PA9/PA10; I2C1 connects the RTC on PB6/PB7
   with external bus pull-ups.
+- The confirmed MCU pin allocation is:
+
+  | MCU pin | Function | Notes |
+  |---|---|---|
+  | `NRST` | Shared reset | Connected to DS3231 `RST` pin 4. |
+  | `PA9` | USART1_TX | Debug UART, 115200 8N1. |
+  | `PA10` | USART1_RX | Debug UART, 115200 8N1. |
+  | `PB6` | I2C1_SCL | Shared DS3231/BH1750/24C01A bus. |
+  | `PB7` | I2C1_SDA | Shared DS3231/BH1750/24C01A bus. |
+  | `PC13` | On-board LED | Temporary 500 ms on / 500 ms off debug blink. |
+  | `PA13` | SWDIO | Reserved for ST-Link debugging. |
+  | `PA14` | SWCLK | Reserved for ST-Link debugging. |
+
+- The remaining assignments are deferred until the display and other board
+  circuitry are finalized: DS3231 `INT/SQW` GPIO, encoder channels, Mode/Set
+  buttons, display segment/digit drivers, buzzer, and alarm LEDs.
 - All peripherals fit the device: I2C (RTC + light + EEPROM), one timer in
   encoder mode, resources for display multiplexing and driver-dependent
   brightness control, and GPIO for buttons, alarm LEDs, buzzer, and DS3231
@@ -270,7 +291,8 @@ The firmware shall provide a UART debug log for bring-up and diagnostics.
   display-driver interface.
 
 ### Phase 2 — Timekeeping
-- **T-020** — Integrate DS3231 readings into the timekeeping and display flow.
+- **T-020** — Integrate DS3231 readings and configure `INT/SQW` for 1 Hz IPC
+  events as the hardware seconds signal.
 - **T-021** — Periodic time read → frame buffer; 1 Hz colon blink.
 - **T-022** — Time-set UI integration (hours/minutes, optional seconds reset).
 
