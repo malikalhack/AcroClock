@@ -44,6 +44,11 @@ typedef enum EBspStatus {
     eBspBusError       = 5  /**< The I2C peripheral reported an error. */
 } EBspStatus_t;
 
+/**
+ * @brief Callback type invoked from the RTC square-wave interrupt handler.
+ */
+typedef void (*BspRtcSqwCallback_t)(void);
+
 /********************* Application Programming Interface *********************/
 
 /**
@@ -55,6 +60,16 @@ typedef enum EBspStatus {
  * @returns Initialization status.
  */
 EBspStatus_t bspInit(volatile uint32_t *tick_source);
+
+/**
+ * @brief Routes the DS3231 1 Hz square-wave signal on PB0 to EXTI0.
+ * @details Configures PB0 with an internal pull-up and falling-edge
+ * detection. The callback runs in interrupt context and must be ISR-safe.
+ * @param[in] callback - function called for each falling edge; must not be
+ * NULL.
+ * @returns Initialization status.
+ */
+EBspStatus_t bspRtcSqwInit(BspRtcSqwCallback_t callback);
 
 /**
  * @brief Get the system core clock frequency.

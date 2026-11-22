@@ -33,8 +33,8 @@ The clock shall keep time using a **DS3231SN** TCXO real-time clock over I2C.
   to the MCU as an external interrupt. It is the hardware seconds event and
   is signalled to the AcroSched task via IPC; the MCU clock is not used as the
   authority for calendar values.
-- The exact STM32 GPIO assignment for `INT/SQW` is TBD until the remaining
-  pin map is finalized.
+- `INT/SQW` is connected to `PB0/EXTI0`; the BSP detects the falling edge and
+  the application task reads the RTC outside interrupt context.
 
 ---
 
@@ -52,6 +52,13 @@ two-LED colon.
 - The hours **tens digit is blanked when zero** (e.g. ` 9:05`, not `09:05`).
 - The display is multiplexed by firmware; the four digits are refreshed in
   turn.
+- Each common anode is switched by a transistor; the MCU GPIOs directly
+  control the segment cathodes through current-limiting resistors. No external
+  display-driver IC is used.
+- Brightness is adjusted by hardware PWM gating during every digit's scan slot;
+  scan slots are not skipped for dimming.
+- To blink a selected digit during editing, its digit-enable is suppressed on
+  alternating blink phases while the normal scan cadence continues.
 - The selected display is the initial implementation target. Scaling to other
   display sizes and the associated power design are deferred.
 
@@ -63,17 +70,30 @@ The display driver interface shall support the E40281-I-O-0-W common-anode
 display and firmware-controlled multiplexing.
 
 **Acceptance criteria:**
-- The firmware interface provides segment signals and digit-select signals
-  appropriate for a common-anode display.
+- PA0–PA7 drive the shared segment cathodes A–G and DP directly through
+  current-limiting resistors. A segment is on when its GPIO is configured as
+  output-low; high-impedance input mode turns it off.
+- Each digit's common anode is switched individually by a transistor under
+  MCU GPIO control. The firmware scans one digit at a time and blanks the
+  segment outputs while changing digits to prevent ghosting.
+- No display-driver IC or SPI interface is used in the initial design.
+- GPIO and timer register access/configuration remains in the BSP; application
+  display logic controls the hardware only through BSP interfaces.
 - At 20 mA per LED chip, the datasheet specifies forward voltage of 2.0 V
   typical and 2.6 V maximum.
 - Do not exceed the absolute maximum of 30 mA DC forward current per LED chip.
   The 90 mA peak rating applies only at 1/10 duty and 0.1 ms pulse width; it
   shall not be treated as a general multiplexing current limit.
-- The driver design shall use the module's integrated colon and follow the
+- Select segment current and resistor values within both the LED ratings and
+  the STM32 per-pin and aggregate GPIO current limits.
+- The circuit shall use the module's integrated colon and follow the
   datasheet's internal circuit diagram and pinout.
-- Specific driver components, supply rails, current budget, brightness control,
-  and scaling are deferred; they are not fixed by this initial requirement.
+- Global brightness control uses a dedicated hardware PWM output on
+  `PB8/TIM4_CH3` to gate display current within each scan slot. It shall not
+  dim by dropping whole scan slots. The transistor-level blanking connection
+  is finalized with the circuit design.
+- Transistor selection, resistor values, supply rails, current budget, and
+  scaling remain to be determined from the electrical design and measurements.
 
 ---
 
@@ -83,8 +103,8 @@ Display brightness shall adapt automatically to ambient light.
 
 **Acceptance criteria:**
 - Ambient light is measured with a **BH1750FVI** sensor over I2C (shared bus).
-- Display brightness is globally adjustable; the control mechanism depends on
-  the display-driver design and is deferred with that design.
+- Display brightness is globally adjustable using hardware PWM on
+  `PB8/TIM4_CH3`, gated within each digit's scan slot.
 - The brightness mapping uses **averaging and hysteresis** so the display does
   not flicker or hunt under changing/shadowed light.
 - A sensible **minimum brightness** keeps the clock readable in darkness.
@@ -206,19 +226,27 @@ The firmware shall target the **STM32F103C8T6** (Cortex-M3, 72 MHz, LQFP48,
   | `NRST` | Shared reset | Connected to DS3231 `RST` pin 4. |
   | `PA9` | USART1_TX | Debug UART, 115200 8N1. |
   | `PA10` | USART1_RX | Debug UART, 115200 8N1. |
+  | `PA0`–`PA7` | Segment cathodes | Shared `A`–`G` and `DP`, via current-limiting resistors. |
+  | `PB0` | EXTI0 | DS3231 `INT/SQW`, 1 Hz falling edge; BSP pull-up to 3.3 V. |
   | `PB6` | I2C1_SCL | Shared DS3231/BH1750/24C01A bus. |
   | `PB7` | I2C1_SDA | Shared DS3231/BH1750/24C01A bus. |
+  | `PB8` | TIM4_CH3 | Dedicated hardware PWM for global display brightness. |
+  | `PB12` | SPI2_NSS | Reserved SPI2 bus. |
+  | `PB13` | SPI2_SCK | Reserved SPI2 bus. |
+  | `PB14` | SPI2_MISO | Reserved SPI2 bus. |
+  | `PB15` | SPI2_MOSI | Reserved SPI2 bus. |
   | `PC13` | On-board LED | Temporary 500 ms on / 500 ms off debug blink. |
   | `PA13` | SWDIO | Reserved for ST-Link debugging. |
   | `PA14` | SWCLK | Reserved for ST-Link debugging. |
 
 - The remaining assignments are deferred until the display and other board
-  circuitry are finalized: DS3231 `INT/SQW` GPIO, encoder channels, Mode/Set
-  buttons, display segment/digit drivers, buzzer, and alarm LEDs.
-- All peripherals fit the device: I2C (RTC + light + EEPROM), one timer in
-  encoder mode, resources for display multiplexing and driver-dependent
-  brightness control, and GPIO for buttons, alarm LEDs, buzzer, and DS3231
-  INT/SQW.
+  circuitry are finalized: encoder channels, Mode/Set buttons,
+  transistor-control GPIOs for digit anodes, buzzer, and alarm LEDs.
+  SPI2 is reserved but has no assigned peripheral in the initial display
+  implementation.
+- All peripherals fit the device: I2C (RTC + light + EEPROM), timer resources
+  for display scanning and encoder mode, and GPIO for segment lines, digit
+  transistors, buttons, alarm LEDs, buzzer, and DS3231 INT/SQW.
 - The existing AcroSched Cortex-M (F103) port is used unchanged.
 
 ---
@@ -277,22 +305,22 @@ The firmware shall provide a UART debug log for bring-up and diagnostics.
   interface.
 - **T-004** — Confirm AcroSched F103 port + project skeleton.
 - **T-005** — Implement the BSP I2C1 master interface.
-- **T-006** — Add the DS3231 application driver and log the time once per
-  second through the BSP-backed debug log.
+- **T-006** — Add the DS3231 application driver and log the time from the
+  1 Hz `INT/SQW` event through the BSP-backed debug log.
 - **T-007** — Draft the remaining MCU pin map after the initial RTC bring-up.
 
 ### Phase 1 — Display subsystem
-- **T-010** — Define the display-driver interface for the E40281-I-O-0-W
-  common-anode display and multiplexed operation.
+- **T-010** — Define the direct-GPIO segment, transistor-switched digit-anode,
+  and global PWM blanking interfaces for the E40281-I-O-0-W.
 - **T-011** — Bring up one digit and verify segment mapping and digit selection.
 - **T-012** — Extend to all 4 digits and the colon LEDs.
 - **T-013** — Segment/font lookup table and frame-buffer update routine.
-- **T-014** — Implement global brightness control using the selected
-  display-driver interface.
+- **T-014** — Implement global brightness control with hardware PWM on
+  `PB8/TIM4_CH3`, without skipping scan slots.
 
 ### Phase 2 — Timekeeping
-- **T-020** — Integrate DS3231 readings and configure `INT/SQW` for 1 Hz IPC
-  events as the hardware seconds signal.
+- **T-020** — Integrate DS3231 readings and configure `PB0/EXTI0` for 1 Hz IPC
+  events from `INT/SQW` as the hardware seconds signal.
 - **T-021** — Periodic time read → frame buffer; 1 Hz colon blink.
 - **T-022** — Time-set UI integration (hours/minutes, optional seconds reset).
 
@@ -334,11 +362,11 @@ The firmware shall provide a UART debug log for bring-up and diagnostics.
 
 1. ✅ ~~Project name~~ — **AcroClock** confirmed (working title kept).
 2. ⏸ **Display supply voltage and current budget** — determine during the
-   deferred power-design phase for the selected display and driver.
+   deferred power-design phase for the selected display and transistor circuit.
 3. ✅ ~~Leading-zero blanking~~ — **yes**, blank the hours tens zero.
 4. ✅ ~~Alarm repeat model~~ — **7-bit weekday mask** (default daily).
-5. 🟡 **Display-driver components, supply, current budget, and scaling** —
-   deferred until after the initial display implementation.
+5. 🟡 **Digit transistors, current-limiting resistors, supply, current budget,
+   and scaling** — determine during circuit design and bench testing.
 6. 🟡 **Snooze / auto-stop** timings for the buzzer.
 7. ⏸ **Whole-device 18650 backup** — deferred until the power architecture is
    defined.

@@ -39,6 +39,42 @@
  */
 #define SYSTEM_CLOCK_HZ         72000000U
 
+/**
+ * @def RTC_SQW_EXTI_LINE
+ * @brief EXTI line assigned to the DS3231 square-wave input on PB0.
+ */
+#define RTC_SQW_EXTI_LINE       (1UL << 0U)
+
+/**
+ * @def RTC_SQW_EXTICR_PORT_B
+ * @brief AFIO EXTICR port selector value for GPIO port B.
+ */
+#define RTC_SQW_EXTICR_PORT_B   0x1UL
+
+/**
+ * @def RTC_SQW_GPIO_CONFIG_MASK
+ * @brief Mask for the PB0 GPIO configuration nibble.
+ */
+#define RTC_SQW_GPIO_CONFIG_MASK 0xFUL
+
+/**
+ * @def RTC_SQW_GPIO_INPUT_PULLUP
+ * @brief STM32F1 GPIO configuration for input with pull-up/down.
+ */
+#define RTC_SQW_GPIO_INPUT_PULLUP 0x8UL
+
+/**
+ * @def RTC_SQW_EXTICR0_LINE_MASK
+ * @brief Mask for the EXTI0 selector field in AFIO EXTICR[0].
+ */
+#define RTC_SQW_EXTICR0_LINE_MASK 0xFUL
+
+/**
+ * @def RTC_SQW_NVIC_PRIORITY
+ * @brief Pre-emption priority for the RTC square-wave interrupt.
+ */
+#define RTC_SQW_NVIC_PRIORITY    3U
+
 /*
  * USART1 is on APB2 (72 MHz).
  * USARTDIV = FCLK / (16 × BAUD) = 72000000 / (16 × 115200) = 39.0625
@@ -48,12 +84,12 @@
 #define BAUD_RATE               115200U
 #define BRR_VALUE               625U
 
-/****************************** Module variables ******************************/
-
-static uint32_t system_clock_hz __attribute__((section(".bss.noinit")));
-static volatile uint32_t *system_tick_source;
-
 /***************************** Private prototypes *****************************/
+
+/**
+ * @brief Does nothing until the application installs its RTC callback.
+ */
+static void rtc_sqw_noop_callback(void);
 
 /** @brief Configures Flash wait states and prefetch. */
 static void flash_config(void);
@@ -80,6 +116,12 @@ static void systick_config(unsigned int ticks);
  */
 static void uart_config(void);
 #endif /* UART_ENABLED */
+
+/****************************** Module variables ******************************/
+
+static uint32_t system_clock_hz __attribute__((section(".bss.noinit")));
+static volatile uint32_t *system_tick_source;
+static BspRtcSqwCallback_t rtc_sqw_callback = rtc_sqw_noop_callback;
 
 /********************* Application Programming Interface **********************/
 
@@ -150,8 +192,43 @@ EBspStatus_t bspInit(volatile uint32_t *tick_source) {
 }
 /*----------------------------------------------------------------------------*/
 
+EBspStatus_t bspRtcSqwInit(BspRtcSqwCallback_t callback) {
+    if (callback == NULL) {
+        return eBspInvalidParam;
+    }
+
+    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN | RCC_APB2ENR_IOPBEN;
+    GPIOB->BSRR = RTC_SQW_EXTI_LINE;
+    GPIOB->CRL = (GPIOB->CRL & ~RTC_SQW_GPIO_CONFIG_MASK)
+               | RTC_SQW_GPIO_INPUT_PULLUP;
+    AFIO->EXTICR[0] = (AFIO->EXTICR[0] & ~RTC_SQW_EXTICR0_LINE_MASK)
+                    | RTC_SQW_EXTICR_PORT_B;
+
+    EXTI->IMR &= ~RTC_SQW_EXTI_LINE;
+    EXTI->RTSR &= ~RTC_SQW_EXTI_LINE;
+    EXTI->FTSR |= RTC_SQW_EXTI_LINE;
+    EXTI->PR = RTC_SQW_EXTI_LINE;
+    rtc_sqw_callback = callback;
+
+    NVIC_ClearPendingIRQ(EXTI0_IRQn);
+    NVIC_SetPriority(EXTI0_IRQn, RTC_SQW_NVIC_PRIORITY);
+    NVIC_EnableIRQ(EXTI0_IRQn);
+    EXTI->IMR |= RTC_SQW_EXTI_LINE;
+
+    return eBspOk;
+}
+/*----------------------------------------------------------------------------*/
+
 void SysTick_Handler(void) {
     (*system_tick_source)++;
+}
+/*----------------------------------------------------------------------------*/
+
+void EXTI0_IRQHandler(void) {
+    if ((EXTI->PR & RTC_SQW_EXTI_LINE) != 0U) {
+        EXTI->PR = RTC_SQW_EXTI_LINE;
+        rtc_sqw_callback();
+    }
 }
 /*----------------------------------------------------------------------------*/
 
@@ -196,6 +273,9 @@ void bspLedToggle(void) {
 }
 
 /****************************** Private functions *****************************/
+
+static void rtc_sqw_noop_callback(void) {}
+/*----------------------------------------------------------------------------*/
 
 static void flash_config(void) {
     /* 2 wait states required for 48 MHz < SYSCLK ≤ 72 MHz */

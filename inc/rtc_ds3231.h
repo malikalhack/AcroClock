@@ -57,5 +57,18 @@ typedef enum ERtcStatus {
  */
 ERtcStatus_t rtc_ds3231_read_time(SRtcDateTime_t *date_time);
 
+/**
+ * @brief Configures the DS3231 square-wave output for 1 Hz.
+ * @details Selects square-wave mode, disables alarm interrupts and disables
+ * square-wave output on battery backup while preserving unrelated control
+ * register bits.
+ * @returns Operation status.
+ * @retval eRtcOk The output was configured successfully.
+ * @retval eRtcNotInitialized The BSP I2C peripheral is not initialized.
+ * @retval eRtcBusError The I2C bus reported an error or NACK.
+ * @retval eRtcTimeout The I2C transfer timed out.
+ */
+ERtcStatus_t rtc_ds3231_configure_sqw_1hz(void);
+
 /******************************************************************************/
 #endif // !RTC_DS3231_H_

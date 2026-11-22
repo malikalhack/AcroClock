@@ -10,10 +10,23 @@
 #include "bsp.h"
 #include "acrosched.h"
 #include "acrosched_defs.h" /* IGNORE_RETURN */
+#include "acrosched_ipc.h"
 #include "debug_log.h"
 #include "rtc_ds3231.h"
 
 /********************************* Definitions ********************************/
+
+/**
+ * @def RTC_SECOND_EVENT
+ * @brief AcroSched event flag set by each DS3231 falling edge.
+ */
+#define RTC_SECOND_EVENT                0x01UL
+
+/**
+ * @def RTC_EVENT_POLL_INTERVAL_TICKS
+ * @brief Maximum scheduler polling interval for the RTC event flag.
+ */
+#define RTC_EVENT_POLL_INTERVAL_TICKS   10U
 
 /**
  * @def CHECK_STATUS
@@ -31,7 +44,7 @@
  */
 enum ETaskDescriptors {
     eLedBlinkTask = 1,
-    eLogTask,
+    eRtcTask,
     eMaxDscr
 };
 
@@ -46,6 +59,7 @@ enum ETaskPriority {
 /****************************** Module variables ******************************/
 
 static volatile AcroTick_t system_tick = 0U;
+static SAcroEventGroup_t rtc_events;
 
 /***************************** Private prototypes *****************************/
 
@@ -66,6 +80,17 @@ static void led_blink_task(AcroParam_t params);
  * @param[in] params - unused scheduler task parameter.
  */
 static void rtc_log_task(AcroParam_t params);
+
+/**
+ * @brief Signals the RTC event group from the EXTI0 interrupt context.
+ */
+static void rtc_sqw_event_callback(void);
+
+/**
+ * @brief Atomically tests and consumes the pending RTC second event.
+ * @returns 1 when an event was consumed, otherwise 0.
+ */
+static uint8_t rtc_take_second_event(void);
 
 /**
  * @brief Logs a human-readable description of an RTC error.
@@ -112,6 +137,10 @@ static void rtc_log_task(AcroParam_t params) {
     ERtcStatus_t status;
 
     (void)params;
+    if (rtc_take_second_event() == 0U) {
+        return;
+    }
+
     status = rtc_ds3231_read_time(&date_time);
     if (status != eRtcOk) {
         log_rtc_error(status);
@@ -119,6 +148,28 @@ static void rtc_log_task(AcroParam_t params) {
     else {
         log_rtc_time(&date_time);
     }
+}
+/*----------------------------------------------------------------------------*/
+
+static void rtc_sqw_event_callback(void) {
+    acroEventSet(&rtc_events, RTC_SECOND_EVENT);
+}
+/*----------------------------------------------------------------------------*/
+
+static uint8_t rtc_take_second_event(void) {
+    uint8_t event_pending;
+
+    event_pending = 0U;
+    ACROSCHED_CRITICAL(
+        event_pending = (uint8_t)(
+            (acroEventGet(&rtc_events) & RTC_SECOND_EVENT) != 0U
+        );
+        if (event_pending != 0U) {
+            acroEventClear(&rtc_events, RTC_SECOND_EVENT);
+        }
+    );
+
+    return event_pending;
 }
 /*----------------------------------------------------------------------------*/
 
@@ -158,6 +209,7 @@ void acroWatchdogRefresh(void) {
 int main(void) {
     EBspStatus_t bsp_status;
     EAcroStatus_t scheduler_status;
+    ERtcStatus_t rtc_status;
 
     bsp_status = bspInit(&system_tick);
     if (bsp_status != eBspOk) {
@@ -166,6 +218,15 @@ int main(void) {
     debug_log_info("AcroClock starting");
 
     CHECK_STATUS(acroInit(&system_tick));
+    rtc_status = rtc_ds3231_configure_sqw_1hz();
+    if (rtc_status != eRtcOk) {
+        error_handler("DS3231 square-wave configuration failed");
+    }
+    bsp_status = bspRtcSqwInit(rtc_sqw_event_callback);
+    if (bsp_status != eBspOk) {
+        error_handler("RTC square-wave interrupt initialization failed");
+    }
+
     scheduler_status = acroAddTask(
         eLedBlinkTask,
         led_blink_task,
@@ -179,11 +240,11 @@ int main(void) {
     }
 
     scheduler_status = acroAddTask(
-        eLogTask,
+        eRtcTask,
         rtc_log_task,
         NULL,
         ePeriodic,
-        BSP_TICKS_PER_SEC,
+        RTC_EVENT_POLL_INTERVAL_TICKS,
         ePrioNormal
     );
     if (scheduler_status != eAcroOk) {
