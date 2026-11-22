@@ -1,0 +1,101 @@
+name: Version bump after push to development
+
+on:
+  push:
+    branches: [development]
+
+permissions:
+  contents: write
+
+jobs:
+  version-bump:
+    if: github.event.deleted == false
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout development
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: development
+          token: ${{ secrets.VERSION_BUMP_TOKEN || github.token }}
+
+      - name: Update version and push to development
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+
+          def git(*args: str) -> str:
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          sha = event["after"]
+          messages = "\n".join([
+              event["head_commit"]["message"],
+              *(commit["message"] for commit in event["commits"]),
+          ])
+          if "[skip ci]" in messages.lower():
+              print("[skip ci] found; version update skipped.")
+              sys.exit(0)
+
+          git("config", "user.name", "github-actions[bot]")
+          git(
+              "config", "user.email",
+              "41898282+github-actions[bot]@users.noreply.github.com",
+          )
+          marker = f"AcroClock-Version-Bump-For: {sha}"
+          for attempt in range(1, 6):
+              git("fetch", "--no-tags", "origin", "development")
+              git("switch", "--detach", "origin/development")
+              if sha not in git("rev-list", "origin/development").splitlines():
+                  print(
+                      f"Push {sha} is no longer in development history; "
+                      "version update skipped."
+                  )
+                  sys.exit(0)
+              processed = git(
+                  "log", "-1", "--format=%H", f"--grep=^{marker}$",
+                  "origin/development",
+              )
+              if processed:
+                  print(f"Push {sha} already processed; nothing to do.")
+                  sys.exit(0)
+
+              text = Path("requirements.md").read_text(encoding="utf-8")
+              matches = re.findall(
+                  r"^\*\*Version:\*\*[ \t]+([0-9]+)\.([0-9]+)\.([0-9]+)",
+                  text, re.MULTILINE,
+              )
+              if len(matches) != 1:
+                  raise SystemExit(
+                      "Expected one AcroClock version in requirements.md"
+                  )
+              parts = [int(part) for part in matches[0]]
+              parts[2] += 1
+              version = ".".join(str(part) for part in parts)
+              subprocess.run(
+                  [sys.executable, "make_release.py", version, "--skip-build"],
+                  check=True,
+              )
+              git(
+                  "add", "--update", "--", "requirements.md",
+                  "bsp/inc", "bsp/src", "inc", "src",
+              )
+              git(
+                  "commit", "-m",
+                  f"Updated AcroClock version to {version} [skip ci]",
+                  "-m", marker,
+              )
+              result = subprocess.run(["git", "push", "origin", "HEAD:development"])
+              if result.returncode == 0:
+                  print(f"Updated development to version {version} for push {sha}.")
+                  break
+              print(f"Push attempt {attempt} failed; retrying from development.")
+          else:
+              raise SystemExit("Could not push the version update after 5 attempts.")

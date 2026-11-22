@@ -1,6 +1,7 @@
 # GitHub stuff
 .github/*
 !.github/instructions/
+!.github/workflows/
 
 # Wiki pieces
 wiki/
