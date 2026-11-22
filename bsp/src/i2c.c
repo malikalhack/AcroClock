@@ -192,7 +192,8 @@ static EBspStatus_t i2c_read_bytes(uint8_t *data, uint8_t length) {
             }
             break;
         case 2U:
-            I2C1->CR1 |= I2C_CR1_ACK;
+            /* NACK the final byte before clearing ADDR on a two-byte read. */
+            I2C1->CR1 &= ~I2C_CR1_ACK;
             i2c_clear_address();
             ret_val = i2c_wait_sr1(I2C_SR1_BTF);
             if (ret_val == eBspOk) {

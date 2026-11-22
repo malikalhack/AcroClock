@@ -29,6 +29,12 @@
 #define RTC_EVENT_POLL_INTERVAL_TICKS   10U
 
 /**
+ * @def RTC_TEMPERATURE_INTERVAL_TICKS
+ * @brief Temperature logging period in scheduler ticks (one minute).
+ */
+#define RTC_TEMPERATURE_INTERVAL_TICKS  (60U * BSP_TICKS_PER_SEC)
+
+/**
  * @def CHECK_STATUS
  * @brief Checks an AcroSched status and stops on failure.
  */
@@ -45,6 +51,7 @@
 enum ETaskDescriptors {
     eLedBlinkTask = 1,
     eRtcTask,
+    eRtcTempTask,
     eMaxDscr
 };
 
@@ -82,6 +89,12 @@ static void led_blink_task(AcroParam_t params);
 static void rtc_log_task(AcroParam_t params);
 
 /**
+ * @brief Reads and logs DS3231 temperature once per minute.
+ * @param[in] params - unused scheduler task parameter.
+ */
+static void rtc_temperature_task(AcroParam_t params);
+
+/**
  * @brief Signals the RTC event group from the EXTI0 interrupt context.
  */
 static void rtc_sqw_event_callback(void);
@@ -103,6 +116,12 @@ static void log_rtc_error(ERtcStatus_t status);
  * @param[in] date_time - decoded date and time.
  */
 static void log_rtc_time(SRtcDateTime_t const *date_time);
+
+/**
+ * @brief Logs the DS3231 temperature to the nearest quarter degree Celsius.
+ * @param[in] temperature_quarters_c - temperature multiplied by four.
+ */
+static void log_rtc_temperature(int16_t temperature_quarters_c);
 
 /****************************** Private functions *****************************/
 
@@ -132,6 +151,31 @@ static void log_rtc_time(SRtcDateTime_t const *date_time) {
 }
 /*----------------------------------------------------------------------------*/
 
+static void log_rtc_temperature(int16_t temperature_quarters_c) {
+    char message[] = "RTC temp: +00.00 C";
+    uint16_t magnitude_quarters;
+    uint8_t degrees;
+    uint8_t fraction;
+
+    if (temperature_quarters_c < 0) {
+        message[10] = '-';
+        magnitude_quarters = (uint16_t)(-temperature_quarters_c);
+    }
+    else {
+        message[10] = '+';
+        magnitude_quarters = (uint16_t)temperature_quarters_c;
+    }
+    degrees = (uint8_t)(magnitude_quarters / 4U);
+    fraction = (uint8_t)((magnitude_quarters % 4U) * 25U);
+
+    message[11] = (char)('0' + (degrees / 10U));
+    message[12] = (char)('0' + (degrees % 10U));
+    message[14] = (char)('0' + (fraction / 10U));
+    message[15] = (char)('0' + (fraction % 10U));
+    debug_log_info(message);
+}
+/*----------------------------------------------------------------------------*/
+
 static void rtc_log_task(AcroParam_t params) {
     SRtcDateTime_t date_time;
     ERtcStatus_t status;
@@ -147,6 +191,21 @@ static void rtc_log_task(AcroParam_t params) {
     }
     else {
         log_rtc_time(&date_time);
+    }
+}
+/*----------------------------------------------------------------------------*/
+
+static void rtc_temperature_task(AcroParam_t params) {
+    int16_t temperature_quarters_c;
+    ERtcStatus_t status;
+
+    (void)params;
+    status = rtc_ds3231_read_temperature(&temperature_quarters_c);
+    if (status != eRtcOk) {
+        log_rtc_error(status);
+    }
+    else {
+        log_rtc_temperature(temperature_quarters_c);
     }
 }
 /*----------------------------------------------------------------------------*/
@@ -188,7 +247,7 @@ static void log_rtc_error(ERtcStatus_t status) {
             debug_log_error("DS3231 I2C timeout");
             break;
         case eRtcInvalidData:
-            debug_log_error("DS3231 returned invalid calendar data");
+            debug_log_error("DS3231 returned invalid data");
             break;
         case eRtcOk:
             break;
@@ -249,6 +308,18 @@ int main(void) {
     );
     if (scheduler_status != eAcroOk) {
         error_handler("RTC task registration failed");
+    }
+
+    scheduler_status = acroAddTask(
+        eRtcTempTask,
+        rtc_temperature_task,
+        NULL,
+        ePeriodic,
+        RTC_TEMPERATURE_INTERVAL_TICKS,
+        ePrioNormal
+    );
+    if (scheduler_status != eAcroOk) {
+        error_handler("RTC temperature task registration failed");
     }
 
     bspWatchdogStart();

@@ -38,6 +38,48 @@
 #define DS3231_REG_CONTROL          0x0EU
 
 /**
+ * @def DS3231_REG_TEMP_MSB
+ * @brief Address of the DS3231 temperature MSB register.
+ */
+#define DS3231_REG_TEMP_MSB         0x11U
+
+/**
+ * @def DS3231_TEMP_REGISTER_COUNT
+ * @brief Number of consecutive temperature registers.
+ */
+#define DS3231_TEMP_REGISTER_COUNT  2U
+
+/**
+ * @def DS3231_TEMP_SIGN_MASK
+ * @brief Sign bit in the integer temperature register.
+ */
+#define DS3231_TEMP_SIGN_MASK       0x80U
+
+/**
+ * @def DS3231_TEMP_SIGN_OFFSET
+ * @brief Two's-complement offset for the 8-bit integer temperature.
+ */
+#define DS3231_TEMP_SIGN_OFFSET     256
+
+/**
+ * @def DS3231_TEMP_FRACTION_MASK
+ * @brief Mask for the quarter-degree fraction in the temperature LSB.
+ */
+#define DS3231_TEMP_FRACTION_MASK   0xC0U
+
+/**
+ * @def DS3231_TEMP_FRACTION_SHIFT
+ * @brief Bit shift of the fractional temperature field.
+ */
+#define DS3231_TEMP_FRACTION_SHIFT  6U
+
+/**
+ * @def DS3231_TEMP_QUARTERS_PER_DEGREE
+ * @brief Number of quarter-degrees in one Celsius degree.
+ */
+#define DS3231_TEMP_QUARTERS_PER_DEGREE  4
+
+/**
  * @def DS3231_CTRL_SQW_CONFIG_MASK
  * @brief Control bits configured for 1 Hz square-wave operation.
  * @details Clears alarm enables, rate selection, INTCN and BBSQW.
@@ -193,6 +235,50 @@ ERtcStatus_t rtc_ds3231_read_time(SRtcDateTime_t *date_time) {
         else {
             *date_time = decoded;
         }
+    }
+
+    return ret_val;
+}
+/******************************************************************************/
+
+ERtcStatus_t rtc_ds3231_read_temperature(int16_t *temperature_quarters_c) {
+    uint8_t register_address;
+    uint8_t raw[DS3231_TEMP_REGISTER_COUNT];
+    int16_t whole_degrees;
+    int16_t fractional_quarters;
+    EBspStatus_t bsp_status;
+    ERtcStatus_t ret_val;
+
+    if (temperature_quarters_c == NULL) {
+        return eRtcInvalidParam;
+    }
+
+    register_address = DS3231_REG_TEMP_MSB;
+    bsp_status = bspI2cWriteRead(
+        DS3231_ADDRESS,
+        &register_address,
+        1U,
+        raw,
+        DS3231_TEMP_REGISTER_COUNT
+    );
+    ret_val = rtc_map_bsp_status(bsp_status);
+    if (ret_val == eRtcOk) {
+        if ((raw[0] & DS3231_TEMP_SIGN_MASK) != 0U) {
+            whole_degrees = (int16_t)(
+                (int16_t)raw[0] - DS3231_TEMP_SIGN_OFFSET
+            );
+        }
+        else {
+            whole_degrees = (int16_t)raw[0];
+        }
+        fractional_quarters = (int16_t)(
+            (raw[1] & DS3231_TEMP_FRACTION_MASK) >>
+            DS3231_TEMP_FRACTION_SHIFT
+        );
+        *temperature_quarters_c = (int16_t)(
+            (whole_degrees * DS3231_TEMP_QUARTERS_PER_DEGREE) +
+            fractional_quarters
+        );
     }
 
     return ret_val;

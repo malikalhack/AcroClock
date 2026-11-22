@@ -182,6 +182,8 @@ The clock shall be able to show ambient temperature on demand.
 
 **Acceptance criteria:**
 - Temperature is read from the **DS3231's internal sensor** (0.25 °C resolution).
+- During bring-up, the DS3231 temperature is read and reported in the debug
+  log once per minute; this diagnostic log does not change display behavior.
 - It is shown only on user request (via the Mode button); the normal view stays
   `HH:MM`.
 
@@ -308,6 +310,8 @@ The firmware shall provide a UART debug log for bring-up and diagnostics.
 - **T-006** — Add the DS3231 application driver and log the time from the
   1 Hz `INT/SQW` event through the BSP-backed debug log.
 - **T-007** — Draft the remaining MCU pin map after the initial RTC bring-up.
+- **T-008** — Read the DS3231 temperature and report it in the debug log once
+  per minute.
 
 ### Phase 1 — Display subsystem
 - **T-010** — Define the direct-GPIO segment, transistor-switched digit-anode,

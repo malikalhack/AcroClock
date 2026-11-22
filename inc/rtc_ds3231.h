@@ -58,6 +58,18 @@ typedef enum ERtcStatus {
 ERtcStatus_t rtc_ds3231_read_time(SRtcDateTime_t *date_time);
 
 /**
+ * @brief Reads the DS3231 temperature in quarter-degrees Celsius.
+ * @param[out] temperature_quarters_c - temperature multiplied by four.
+ * @returns Operation status.
+ * @retval eRtcOk The temperature was read successfully.
+ * @retval eRtcInvalidParam temperature_quarters_c is NULL.
+ * @retval eRtcNotInitialized The BSP I2C peripheral is not initialized.
+ * @retval eRtcBusError The I2C bus reported an error or NACK.
+ * @retval eRtcTimeout The I2C transfer timed out.
+ */
+ERtcStatus_t rtc_ds3231_read_temperature(int16_t *temperature_quarters_c);
+
+/**
  * @brief Configures the DS3231 square-wave output for 1 Hz.
  * @details Selects square-wave mode, disables alarm interrupts and disables
  * square-wave output on battery backup while preserving unrelated control
