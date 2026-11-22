@@ -1,6 +1,6 @@
 /**
  * @file    bsp.h
- * @version 0.1.0
+ * @version 0.1.1
  * @authors Anton Chernov
  * @date    2026-08-15
  * @date    @showdate "%Y-%m-%d"

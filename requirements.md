@@ -3,7 +3,7 @@
 **Project:** AcroClock
 **Author:** Anton Chernov
 **Date:** 2026-06-28
-**Version:** 0.1.0 *(draft — inception)*
+**Version:** 0.1.1 *(draft — inception)*
 
 A digital desk clock built on the **AcroSched 2.7.0** cooperative scheduler.
 Real-time accuracy from a DS3231 TCXO RTC, a four-digit multiplexed
